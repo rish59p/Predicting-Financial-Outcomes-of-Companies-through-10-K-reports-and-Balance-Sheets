@@ -1,0 +1,655 @@
+---
+title: "Predicting Financial Conditions of Companies through 10-K reports and Balance Sheets"
+subtitle: "CME Assignment I"
+author: "Rishabh Patil | 2021A7PS0464H"
+layout: page
+output:
+  pdf_document: 
+    includes:
+      in_header: "wrap-code.tex"
+    toc: yes
+    fig_caption: yes
+    number_sections: yes
+    keep_tex: yes
+    highlight: espresso
+    fig_crop: no
+  html_document: 
+    toc: yes
+    highlight: textmate
+    theme: simplex
+    fig_width: 10
+    fig_height: 7
+    fig_caption: yes
+  html_notebook: 
+    toc: yes
+    highlight: espresso
+    theme: united
+    fig_caption: yes
+    number_sections: yes
+editor_options:
+  chunk_output_type: inline
+---
+```{r}
+knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 60), tidy = TRUE)
+```
+
+# About the dataset
+
+The dataset is a compilation of various factors from the financial statements of various companies from the 10-K reports and balance sheets. All the relevant data columns that MAY affect the market cap value are presented.
+
+*Data Preview:*
+
+```{r}
+
+data <- read.csv("Raw Data/Financial Statements.csv" )
+head(data)
+
+```
+
+The data presented is panel data, that is, it is a combination of both time series and cross sectional data. Therefore traditional regression models cannot be used, but some tweaked versions of it are to be used.
+
+We need to use the plm package for panel data regression.
+
+```{r}
+#install.packages("plm")
+library(plm)
+```
+
+```{r}
+pdata=pdata.frame(data, index=c("Company","Year"))
+head(pdata)
+```
+
+## Model fitting:
+
+We'll start our regression model with Pooling method panel regression. In **Pooled OLS Regression**, we treat each row as a new data point, i.e: we remove the time variance and company specifics from the data, and run a linear regression model on the data we have.
+
+
+
+### Dependent and Independent Variables:
+
+Here `Market Cap` is the ***Dependent Variable*** and rest all are ***Independent Variables*** barring `Year`, `Company Type` and `Company`.
+
+Reasons for selecting the independent variable:
+
+1.  Financial Performance: Companies are assessed on their market cap, and it is considered as a good indicator for the their performance.
+
+2.  Investors Point Of View: Investors see this as a good indicator to make informed investment stratergies.
+
+**Segregating them for model fitting:**
+
+```{r}
+dep <- c(names(pdata))[5:23]
+Y <- c(names(pdata))[4]
+```
+
+###***Pooled OLS Regression:***
+
+$$
+Y_{it} = \beta_0 + \sum_{k=1}^n \beta_k(X_k)_{it}
+$$
+
+
+```{r}
+pooledmethod <- plm(Market.Cap.in.B.USD.~ Revenue+Gross.Profit+Net.Income+Earning.Per.Share+EBITDA+Share.Holder.Equity+Cash.Flow.from.Operating+Cash.Flow.from.Investing+Cash.Flow.from.Financial.Activities+Current.Ratio+ROE+ROA+ROI+Net.Profit.Margin+Free.Cash.Flow.per.Share+Return.on.Tangible.Equity+Inflation.Rate.in.US.+Debt.Equity.Ratio+Number.of.Employees,data=pdata,model="pooling")
+summary(pooledmethod)
+
+```
+
+According to above summary, `Gross Profit`, `Net Income`, `Share.Holder.Equity` and `Current.Ratio` & `Free.Cash.Flow.per.Share` are significant in Pooled OLS Method.
+
+### ***Fixed Effect Method:***
+
+
+
+```{r}
+femethod <- plm(Market.Cap.in.B.USD.~ Revenue+Gross.Profit+Net.Income+Earning.Per.Share+EBITDA+Share.Holder.Equity+Cash.Flow.from.Operating+Cash.Flow.from.Investing+Cash.Flow.from.Financial.Activities+Current.Ratio+ROE+ROA+ROI+Net.Profit.Margin+Free.Cash.Flow.per.Share+Return.on.Tangible.Equity+Inflation.Rate.in.US.+Debt.Equity.Ratio+Number.of.Employees,data=pdata,model="within")
+summary(femethod)
+```
+
+From here, the significant variables are: `Net Income`, `Gross Profit`, `Revenue`, `Number Of Employees`
+
+Normalising the data
+
+```{r}
+dep
+```
+
+```{r}
+#install.packages("dplyr")
+pdata[is.na(pdata)]<-0
+library(dplyr)
+normalpdata <- pdata%>% mutate_at(setdiff(dep, c('Debt.Equity.Ratio', 'Number.of.Employees')), ~(scale(.) %>% as.vector))
+head(normalpdata)
+```
+
+trying standardized data(not recommended as we lose meaning):
+
+```{r}
+femethod2 <- plm(Market.Cap.in.B.USD.~ Revenue+Gross.Profit+Net.Income+Earning.Per.Share+EBITDA+Share.Holder.Equity+Cash.Flow.from.Operating+Cash.Flow.from.Investing+Cash.Flow.from.Financial.Activities+Current.Ratio+ROE+ROA+ROI+Net.Profit.Margin+Free.Cash.Flow.per.Share+Return.on.Tangible.Equity+Inflation.Rate.in.US.+Debt.Equity.Ratio+Number.of.Employees,data=normalpdata,model="within")
+summary(femethod2)
+```
+
+little to no effect on significant variables when standardized.
+
+####**Plotting the results:**
+
+```{r}
+pdata[is.na(pdata)]<-0
+
+library(ggplot2)
+ggplot(data=pdata,aes(x=Share.Holder.Equity,y=Market.Cap.in.B.USD.,color=Company)) + geom_point() + facet_wrap(~Company,nrow=3,scale="free")
+```
+
+using log scale for percentage change:
+
+```{r}
+ggplot(data=pdata,aes(x=log(Share.Holder.Equity),y=log(Market.Cap.in.B.USD.),color=Company)) + geom_point() + facet_wrap(~Company,nrow=3)
+
+```
+
+For
+
+```{r,fig.width=10,fig.height=8}
+#install.packages("tidyverse")
+library(tidyverse)
+data[is.na(data)]<-0
+data %>%
+  ggplot(aes(x=Gross.Profit,y=Market.Cap.in.B.USD.,size=Share.Holder.Equity,color=Year))+geom_point()+facet_wrap(~Company,nrow=4,scale="free")+labs(title="Market Cap explained by Share holder equity and Gross Profit over the years",x="Gross Profit",y="Market Cap")
+```
+
+```{r,fig.width=10,fig.height=8}
+#install.packages("tidyverse")
+library(tidyverse)
+data[is.na(data)]<-0
+data %>%
+  ggplot(aes(x=Net.Income,y=Market.Cap.in.B.USD.,size=Gross.Profit,color=Year))+geom_point()+facet_wrap(~Company,nrow=4,scale="free")+labs(title="Market Cap explained by Net Income and Gross Profit over the years",x="Net Income",y="Market Cap")
+```
+
+
+###***Random Effect:***
+
+```{r}
+#remethod <- plm(Market.Cap.in.B.USD.~ Revenue+Gross.Profit+Net.Income+Share.Holder.Equity+Cash.Flow.from.Operating+Cash.Flow.from.Investing+Cash.Flow.from.Financial.Activities+Current.Ratio+ROE+ROA+ROI+Net.Profit.Margin+Free.Cash.Flow.per.Share+Return.on.Tangible.Equity+Inflation.Rate.in.US.+Debt.Equity.Ratio+Number.of.Employees,data=pdata,model="random")
+#summary(remethod)
+```
+Here the variables are too many for the given data set to perform Random Effects regression, hence we remove some variables with high p-values from FE.
+
+```{r}
+remethod <- plm(Market.Cap.in.B.USD.~ Revenue+Gross.Profit+Net.Income+Earning.Per.Share+EBITDA+Share.Holder.Equity+Cash.Flow.from.Financial.Activities+Current.Ratio+Free.Cash.Flow.per.Share+Number.of.Employees,data=pdata,model="random")
+summary(remethod)
+```
+Here we find that `Gross Profit`, `Net Income`, `Current Ratio`, `Share.Holder.Equity`, `Cash.Flow.from.Financial.Activities` and `Current Ratio` are significant.
+
+
+### RE vs FE
+using the Hausman Test to check which one is better for our data.
+Fisrt run a FE model on restricted varaibles:
+
+
+```{r}
+femthod2 <- plm(Market.Cap.in.B.USD.~ Revenue+Gross.Profit+Net.Income+Earning.Per.Share+EBITDA+Share.Holder.Equity+Cash.Flow.from.Financial.Activities+Current.Ratio+Free.Cash.Flow.per.Share+Number.of.Employees,data=pdata,model="within")
+summary(femethod2) 
+```
+
+
+```{r}
+phtest(femethod2,remethod)
+```
+The p-value is significant, i.e p-value <0.05, therefore we use the prior, Fixed Effects model for our data
+
+
+### pooled vs FE
+```{r}
+pFtest(femethod,pooledmethod)
+```
+
+```{r}
+pFtest(femethod2,pooledmethod)
+```
+p-value <0.05 : therefore reject Null, and alt is : Fixed Effect
+Therefore we go ahead with fixed effect.
+```{r}
+summary(fixef(femethod))
+```
+
+**We'll describe each coefficient later on after variable selection**
+
+# Variable Selection
+
+## LASSO for variable selection
+
+```{r}
+library(glmnet)
+formula <- Market.Cap.in.B.USD.~ Revenue+Gross.Profit+Net.Income+Share.Holder.Equity+Cash.Flow.from.Operating+Cash.Flow.from.Investing+Cash.Flow.from.Financial.Activities+Current.Ratio+ROE+ROA+ROI+Net.Profit.Margin+Free.Cash.Flow.per.Share+Return.on.Tangible.Equity+Inflation.Rate.in.US.+Debt.Equity.Ratio+Number.of.Employees
+lasso_model <- cv.glmnet(model.matrix(formula, data = pdata), pdata$Market.Cap.in.B.USD., alpha = 1)
+#summary(lasso_model)
+lasso_selected_variables <- coef(lasso_model, s = "lambda.min") %>%
+  as.matrix() %>%
+  as.logical() %>%
+  colnames()
+lasso_selected_variables <- names(lasso_selected_variables[lasso_selected_variables != 0])
+lasso_selected_variables
+```
+
+```{r}
+X<- model.matrix(formula,data=pdata)
+y<- as.numeric(pdata$Market.Cap.in.B.USD.)
+
+lasso_model <- cv.glmnet(X,y,alpha=1,family="gaussian")
+best_lambda<- lasso_model$lambda.min
+final_lasso_model<-glmnet(X,y,alpha=1,family="gaussian",lambda=best_lambda)
+summary(final_lasso_model)
+coef_fe_lasso <- coef(final_lasso_model)
+plot(lasso_model)
+print(coef_fe_lasso)
+```
+
+##Ridge:
+
+```{r}
+ridge_model<-cv.glmnet(X,y,alpha=0,family="gaussian")
+best_lambda_r<-ridge_model$lambda.min
+final_ridge_model<-glmnet(X,y,alpha=0,family="gaussian",lambda=best_lambda_r)
+print(summary(final_ridge_model))
+plot(ridge_model)
+lambda_value_r = 0.1
+coef_r<-coef(final_ridge_model,s=lambda_value_r)
+coef_r
+```
+
+## StepWise:
+
+------------------------------------------------------------------------
+
+```{r}
+stepwise_model <- step(lm(formula, data = pdata))
+print(stepwise_model)
+```
+
+From the above analysis we find that the best model has :
+
+```{r}
+names(coef(stepwise_model))[2:9]
+```
+
+
+Buliding a fixed effects model on this:
+
+```{r}
+new_formula_fe<- as.formula(paste("Market.Cap.in.B.USD. ~", paste(names(coef(stepwise_model))[2:9], collapse = " + ")))
+fe_constrained <- plm(new_formula_fe,data=pdata,model="within")
+summary(fe_constrained)
+```
+
+```{r}
+library(MASS)
+
+
+#final_fe_model<-stepAIC(initial_fe_model,direction="backward")
+#normal stepAIC function won't work for panel data
+
+```
+
+```{r}
+#install.packages("pglm")
+library(pglm)
+#null_model <- pglm(pdata$Market.Cap.in.B.USD.~ 1,data=pdata,family=gaussian)
+#final_fwd_fe_model <- stepAIC(initial_fe_model,direction = "forward")
+```
+
+
+## Random Forest Method
+
+using tree-based decision making through random forest estimation
+
+The following variables are being selcted.
+
+```{r}
+library(randomForest)
+rf_model <- randomForest(formula, data = pdata)
+rf_var_importance <- importance(rf_model)
+rf_threshold <- 2500000  # Adjust the threshold as needed
+rf_selected_variables <- rownames(rf_var_importance)[rf_var_importance[, "IncNodePurity"] > rf_threshold]
+rf_selected_variables
+```
+
+
+
+## Information Criteria:
+
+```{r}
+models<-list()
+for(i in 1:100){
+  predictors<-sample(dep, size=sample(1:5,1))
+  formula_IC<-as.formula(paste("Market.Cap.in.B.USD. ~",paste(predictors,collapse="+")))
+  model<-pglm(formula_IC,model="within",data=pdata,family=gaussian)
+  models[[i]]<-model
+}
+aic_values<-numeric(100)
+bic_values<-numeric(100)
+
+for(i in 1:100){
+  aic_values[i]<-AIC(models[[i]])
+  bic_values[i]<-BIC(models[[i]])
+}
+
+best_model_index_aic<-which.min(aic_values)
+best_model_index_bic<-which.min(bic_values)
+
+best_model_aic<-models[[best_model_index_aic]]
+#bic doesn't work for panel data and hence NULL is repturned
+#best_model_bic<-models[[best_model_index_bic]]
+
+summary(best_model_aic)
+#summary(best_model_bic)
+```
+
+Therefore the variables selected are:
+```{r}
+coef(best_model_aic)
+```
+## Out Of Sample Methodology
+(Cross Validation)
+
+```{r}
+# library(caret)
+# library(glmnet)
+# 
+# pdata$Market.Cap.in.B.USD.<- as.factor(pdata$Market.Cap.in.B.USD.)
+# 
+# set.seed(123)
+# train_index<-createDataPartition(data$Market.Cap.in.B.USD.,p=0.8,list=FALSE)
+# training_data<-pdata[train_index,]
+# testing_data<-pdata[-train_index,]
+# 
+# model_results<-list()
+# 
+# num_folds<-5
+# 
+# 
+# for(i in 1:100){
+#   predictors<-sample(names(training_data)[2:201],size=sample(1:5,1))
+#   training_data$intercept<-1
+#   x<-as.matrix(training_data[,c("intercept"),drop=FALSE])
+
+
+   #training data is NULL since CV doesn't work for panel data:
+
+
+
+#   formula<-as.formula(paste("Market.Cap.in.B.USD. ~",paste(colnames(x)[-1],collapese="+")))
+#   
+#   outcome_class<-"twoClass"
+#   outcome_levels <-levels(training_data$Market.Cap.in.B.USD. )
+#   model<-cv.glmnet(x,as.numeric(training_data$Market.Cap.in.B.USD.),family="gaussian",type.measure = "class",nfolds=num_folds)
+#   model_results[[i]]<-model_results
+# }
+# 
+# 
+# best_model_cv <-NULL
+# best_auc<-0
+# for(i in 1:100){
+#   model<-model_results[[i]]
+#   perf<-max(model$cvm)
+#   if(perf>best_auc){
+#     best_auc<-perf
+#     best_model<-model
+#   }
+# }
+# print(best_model)
+```
+
+
+#Interpreting the coefficients
+
+We will take the results of the random Forest methodology:
+therefor the coefficients are:
+
+```{r}
+rf_selected_variables
+```
+The Revenue is the total amount procured by the company.
+Gross Profit is the accounting profit, i.e inflow - outflow
+Net Income is the inward CASH flow(not the inventory)
+Cash Flow from Operating and Financial Activities ~ self explanatory
+
+With these variables we can predict the market cap of the given company
+
+
+We know for our Fixed Effects model, the generalised formula is :
+
+$$
+\textbf{Y}_{it} = \bf{\beta}_0 + \textbf{X}_{it}\bf{\beta}_i + c_i + \epsilon_i
+\\
+\text{for ith compant at t time instance.}
+\\
+c_i : \text{group specific intercept}
+$$
+
+Now the finalised model:
+
+```{r}
+new_formula_rf<- as.formula(paste("Market.Cap.in.B.USD. ~", paste(rf_selected_variables, collapse = " + ")))
+new_model_rf <- plm(new_formula_rf,data=pdata,model="within")
+
+```
+class $c_i$ terms:
+
+```{r}
+fe_coeff<- fixef(new_model_rf)
+fe_coeff
+
+```
+# Checking the assumptions:
+
+##homoscedasticity
+The correlation matrix:
+
+
+
+
+```{r,fig.height=15,fig.width=15}
+library(corrplot)
+corrplot(corr=cor(pdata[dep]),
+         addCoef.col = "black",
+         number.cex = 0.8,
+         number.digits = 1,
+         diag = FALSE,
+         bg="grey",
+         outline= "black",
+         addgrid.col="white",
+         mar=c(1,1,1,1),
+         type="lower")
+```
+
+
+```{r,fig.width=40,fig.height=40}
+library(GGally)
+GGally::ggpairs(pdata[dep],ggplot2::aes(colour=pdata$Company))
+```
+
+TO check for homoscedasticity of variables
+
+```{r}
+library(lmtest)
+pdata$Market.Cap.in.B.USD. <- as.numeric(as.character(pdata$Market.Cap.in.B.USD.))
+bptest(formula,data=pdata,studentize = F)
+```
+
+
+Here, the obtained p-value : <0.05. Therefore we can conclude that H0: Homoscedasticity exists, is false. Therefore the data is heteroscedastic in nature.
+
+Checking for our constrained model that we got from variable selection:
+**Using random Forest estimates:**
+
+```{r}
+
+bptest(new_formula_rf,data=pdata)
+```
+Checking AIC selected variables:
+
+```{r}
+new_formula_aic<- as.formula(paste("Market.Cap.in.B.USD. ~", paste(names(coef(best_model_aic))[2:5], collapse = " + ")))
+new_fe_model_aic <- plm(new_formula_aic,data=pdata,model="within")
+bptest(new_formula_aic,data=pdata)
+```
+
+
+
+To correct heteroskedasticity, we take the squareroot of the independent variable:
+```{r}
+pdata_sq<-pdata
+pdata_sq$Market.Cap.in.B.USD.<-sqrt(pdata$Market.Cap.in.B.USD.)
+bptest(new_formula_aic,data=pdata_sq)
+
+```
+
+```{r}
+bptest(new_formula_rf,data=pdata_sq)
+
+```
+
+->p-value>0.05 for both model variables, therefore homoscedasticity is assumed in both models.
+
+Now modifying the formula:
+
+```{r}
+new_formula_aic<- as.formula(paste("sqrt(pdata$Market.Cap.in.B.USD.) ~", paste(names(coef(best_model_aic))[2:5], collapse = " + ")))
+new_formula_rf<- as.formula(paste("sqrt(pdata$Market.Cap.in.B.USD.) ~", paste(rf_selected_variables, collapse = " + ")))
+```
+
+```{r}
+bptest(formula,data=pdata)
+
+```
+
+
+Checking for outliers:
+```{r}
+new_fe_model<-plm(new_formula_rf,data=pdata,model="within",effect="individual")
+residuals <- residuals(new_fe_model)
+standardized_residuals <- residuals / sqrt(var(residuals))
+standardized_residuals
+```
+
+```{r}
+new_fe_model_aic<-plm(new_formula_aic,data=pdata,model="within",effect="individual")
+residuals <- residuals(new_fe_model_aic)
+standardized_residuals <- residuals / sqrt(var(residuals))
+standardized_residuals
+```
+
+
+## Multicolinearity test:
+Note: VIF cannot be used for panel data also for panel data multicollinearity test isn't relevant.
+```{r}
+vcov_fe <- vcovHC(new_fe_model)
+plot(vcov_fe)
+```
+
+
+## Autocorrelation:
+Wooldridge test:
+```{r}
+pbgtest(new_fe_model)
+```
+Since p-value <5% there is either autocorrelation or serial correlation in error term.
+
+```{r}
+pbgtest(new_fe_model_aic)
+
+```
+Since p-value <5% there is either autocorrelation or serial correlation in error term. But the p-value is higher for AIC selected variables.
+
+
+Durbin-Watson Test:
+```{r}
+pdwtest(new_formula_rf,data=pdata,model="within")
+```
+
+Since p-value <5% there is autocorrelation in error term.
+
+```{r}
+pdwtest(new_formula_aic,data=pdata,model="within")
+```
+p-value>1% so we can assume no autocorrelation.
+Using a lagged model:
+
+```{r}
+pdata$lagy<-lag(pdata$Market.Cap.in.B.USD.)
+fixed_effects_model_with_lag_rf <- plm(sqrt(pdata$Market.Cap.in.B.USD.) ~ Revenue + Gross.Profit + Net.Income +  Cash.Flow.from.Operating + Cash.Flow.from.Financial.Activities  + sqrt(lagy) + factor(Company), data = pdata, model = "within")
+```
+
+Now testing this model:
+
+```{r}
+pdwtest(sqrt(pdata$Market.Cap.in.B.USD.) ~ Revenue + Gross.Profit + Net.Income +  Cash.Flow.from.Operating + Cash.Flow.from.Financial.Activities  + sqrt(lagy) + factor(Company),data=pdata,model="within")
+
+```
+This did increase the p-value significantly.
+
+For the AIC selected Variables
+
+
+```{r}
+fixed_effects_model_with_lag_aic <- plm(sqrt(pdata$Market.Cap.in.B.USD.) ~ Gross.Profit + Net.Income + Share.Holder.Equity + Earning.Per.Share + Revenue + sqrt(lagy) + factor(Company),data=pdata,model="within")
+pdwtest(sqrt(pdata$Market.Cap.in.B.USD.) ~ Gross.Profit + Net.Income + 
+    Share.Holder.Equity + Earning.Per.Share + Revenue + sqrt(lagy) + factor(Company),data=pdata,model="within")
+```
+
+##Normality of Error Term:
+Shapiro-Wilk Test:
+```{r}
+residuals_panel<-residuals(new_fe_model)
+shapiro.test(residuals_panel)
+```
+Since p-value is < 0.01, we accept null hyp. that the residuals are not normally distributed.
+
+Checking our lagged model:
+```{r}
+residuals_panel<-residuals(fixed_effects_model_with_lag_aic)
+shapiro.test(residuals_panel)
+```
+P-value is increased but not significantly
+
+```{r}
+hist(residuals_panel, main = "Histogram of Residuals")
+```
+
+```{r}
+qqnorm(residuals_panel)
+qqline(residuals_panel)
+```
+
+using a log Output scale:
+```{r}
+pdata$Market.Cap.in.B.USD.[pdata$Market.Cap.in.B.USD.==0]<-0.001
+pdata$lagy[pdata$lagy==0]<-0.001
+fixed_eff_lag_log_rf<- plm(log(sqrt(pdata$Market.Cap.in.B.USD.)) ~ Revenue + Gross.Profit + Net.Income +  Cash.Flow.from.Operating + Cash.Flow.from.Financial.Activities  + log(sqrt(lagy)) + factor(Company),data=pdata,model="within")
+residuals_panel<-residuals(fixed_eff_lag_log_rf)
+shapiro.test(residuals_panel)
+```
+
+We don't see an increase in p-value.
+
+```{r}
+fixed_eff_lag_log_aic<- plm(log(sqrt(pdata$Market.Cap.in.B.USD.)) ~ Gross.Profit + Net.Income + 
++     Share.Holder.Equity + Earning.Per.Share + Revenue + log(sqrt(lagy)) + factor(Company),data=pdata,model="within")
+residuals_panel<-residuals(fixed_eff_lag_log_aic)
+shapiro.test(residuals_panel)
+```
+
+Final Model:
+
+$$
+\log(\sqrt{\textbf{Y}_{it}}) = \log(\sqrt{\textbf{Y}_{(i-1)t}}) + \bf{\beta}_0 + \textbf{X}_{it}\bf{\beta}_i + c_i + \epsilon_i
+$$
+
+
+Coefficients:
+
+```{r}
+print(fixef(fixed_eff_lag_log_aic))
+summary(fixed_eff_lag_log_aic)
+```
